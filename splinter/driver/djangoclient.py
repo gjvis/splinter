@@ -118,7 +118,7 @@ class DjangoClient(DriverAPI):
         self._handle_redirect_chain()
         self._post_load()
 
-    def submit(self, form):
+    def submit(self, form, extra_data=None):
         method = form.attrib['method']
         func_method = getattr(self._browser, method.lower())
         action = form.attrib.get('action', '')
@@ -128,6 +128,8 @@ class DjangoClient(DriverAPI):
             url = self._url
         self._url = url
         data = dict(((k, v) for k, v in form.fields.items() if v is not None))
+        if extra_data:
+            data.update(extra_data)
         for key in form.inputs.keys():
             input = form.inputs[key]
             if getattr(input, 'type', '') == 'file' and key in data:
@@ -199,6 +201,8 @@ class DjangoClient(DriverAPI):
         for xpath_element in html.xpath(xpath):
             if self._element_is_link(xpath_element):
                 return self._find_links_by_xpath(xpath)
+            elif self._element_is_button(xpath_element):
+                elements.append((DjangoClientControlButtonElement, xpath_element))
             elif self._element_is_control(xpath_element):
                 elements.append((DjangoClientControlElement, xpath_element))
             else:
@@ -316,6 +320,9 @@ class DjangoClient(DriverAPI):
     def _element_is_control(self, element):
         return hasattr(element, 'type')
 
+    def _element_is_button(self, element):
+        return element.tag == "button"
+
     @property
     def cookies(self):
         return self._cookie_manager
@@ -403,8 +410,12 @@ class DjangoClientControlElement(DjangoClientElement):
         return self._control.attrib[attr]
 
     @property
+    def name(self):
+        return self._control.get("name", None)
+
+    @property
     def value(self):
-        return self._control.value
+        return self._control.get("value", None)
 
     @property
     def checked(self):
@@ -428,6 +439,16 @@ class DjangoClientControlElement(DjangoClientElement):
         parent_form = next(self._control.iterancestors('form'))
         return self.parent._forms.setdefault(parent_form._name(), parent_form)
 
+
+class DjangoClientControlButtonElement(DjangoClientControlElement):
+
+    def click(self):
+        parent_form = self._get_parent_form()
+        if self.name:
+            extra_data = {self.name: self.value}
+        else:
+            extra_data = None
+        return self.parent.submit(parent_form, extra_data=extra_data).content
 
 class DjangoClientOptionElement(DjangoClientElement):
 
